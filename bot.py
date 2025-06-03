@@ -27,6 +27,16 @@ def convert_text(text):
 def generate_news_path():
     return f"news/{str(int(time.time()))}"
 
+def clean_text_for_meta(text):
+    """清理文本用於meta標籤"""
+    # 移除HTML標籤
+    text = re.sub(r'<[^>]+>', '', text)
+    # 移除多餘空白
+    text = re.sub(r'\s+', ' ', text)
+    # 移除標題符號
+    text = re.sub(r'^[#\s]+', '', text)
+    return text.strip()
+
 @client.event
 async def on_ready():
     print('We have logged in as {0.user}'.format(client))
@@ -41,10 +51,19 @@ async def on_message(message):
         command = message.content.split(' ')[1].split('\n')[0]
         print(command)
         if command == "upload":
-            first_title = re.search(r'^# (.+)$', message.content, flags=re.MULTILINE)
-            first_title = first_title.group(1) if first_title else "新聞"
-            meta_title = first_title
-            content = convert_text(re.sub(f"<@{str(client.user.id)}> upload\n", "", message.content))
+            # 取得原始內容(不含命令)
+            raw_content = re.sub(f"<@{str(client.user.id)}> upload\n", "", message.content)
+            
+            # 取得第一個標題
+            first_title = re.search(r'^# (.+)$', raw_content, flags=re.MULTILINE)
+            meta_title = clean_text_for_meta(first_title.group(1) if first_title else "新聞")
+            
+            # 處理meta description
+            content_without_first_title = re.sub(r'^# .+?\n', '', raw_content, count=1, flags=re.MULTILINE)
+            meta_desc = clean_text_for_meta(content_without_first_title)[:150] + "..."
+            
+            # 轉換內容為HTML
+            content = convert_text(raw_content)
 
             image_html = ""
             news_folder = f"{file_path}/{news_path}"
@@ -57,17 +76,19 @@ async def on_message(message):
                     await attachment.save(image_path)
                     image_html += f'<img src="{website_url}/{news_path}/{attachment.filename}" alt="{attachment.filename}" style="max-width: 100%; max-height: 500px;"><br/>'
 
-            meta_desc = re.sub(meta_title, "", content)[:50] + "..."
-            
             html_1 = f'''
                 <!DOCTYPE html>
-                <html lang="en">
+                <html lang="zh-Hant">
                 <head>
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <meta property="og:title" content="{meta_title}" />
+                    <meta property="og:description" content="{meta_desc}" />
+                    <meta property="og:type" content="article" />
+                    <meta property="og:url" content="{website_url}/{news_path}" />
                     <meta name="title" content="{meta_title}" />
                     <meta name="description" content="{meta_desc}" />
-                    <title>絕對不是假新聞網</title>
+                    <title>{meta_title} - 絕對不是假新聞網</title>
                 '''
             if not os.path.exists(file_path):
                 os.makedirs(file_path)
